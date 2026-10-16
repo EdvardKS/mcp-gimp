@@ -18,6 +18,8 @@ PORT = int(os.environ.get("GIMP_MCP_PORT", "9877"))
 MODE = os.environ.get("GIMP_MCP_MODE", "gui").lower()
 TIMEOUT = float(os.environ.get("GIMP_MCP_TIMEOUT", "300"))
 STARTUP_TIMEOUT = float(os.environ.get("GIMP_MCP_STARTUP_TIMEOUT", "240"))
+# Segundos de espera cuando se reenvía la orden a una GUI ya abierta antes de usar el plan B
+FORWARD_TIMEOUT = float(os.environ.get("GIMP_MCP_FORWARD_TIMEOUT", "20"))
 
 
 class GimpError(RuntimeError):
@@ -67,6 +69,21 @@ def _gimp_exe(headless: bool) -> Path:
 
 
 PLUGIN_SRC = Path(__file__).parent / "gimp_plugin" / "mcp-bridge.py"
+
+
+def _gui_running() -> bool:
+    """True si hay un GIMP con ventana abierto (no cuenta gimp-console)."""
+    if os.name != "nt":
+        return False
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq gimp-3*", "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True, timeout=15,
+                             creationflags=subprocess.CREATE_NO_WINDOW).stdout.lower()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    # Primera columna del CSV: el nombre del ejecutable (gimp-3.exe, gimp-3.2.exe, gimp-console-3.2.exe...)
+    names = [line.split('","')[0].strip('"') for line in out.splitlines() if line.startswith('"')]
+    return any(n.startswith("gimp-3") for n in names)
 
 
 def install_plugin() -> Path:
@@ -154,9 +171,7 @@ class Bridge:
             raise ConnectionError("GIMP cerró la conexión")
         return json.loads(line)
 
-    def _launch(self) -> None:
-        # Si GIMP ya está abierto, lanzarlo otra vez le pasa la orden -b a la instancia existente.
-        headless = MODE == "headless"
+    def _launch(self, headless: bool) -> None:
         exe = _gimp_exe(headless)
         install_plugin()
         args = [str(exe), "--no-splash", "--batch-interpreter=plug-in-script-fu-eval",
@@ -166,6 +181,37 @@ class Bridge:
         _spawn_detached(args, hidden=headless)
         self.mode = "headless" if headless else "gui"
 
+    def _wait_connect(self, timeout: float) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                self._connect()
+                return True
+            except OSError:
+                time.sleep(1.5)
+        return False
+
+    def _start_gimp(self) -> None:
+        """Consigue un GIMP con el puente activo, por este orden:
+
+        1. GUI ya abierta: se le reenvía la orden de activar el puente (rápido). Si no
+           responde (p. ej. tiene un diálogo modal abierto) se pasa al punto 3.
+        2. Sin GIMP abierto y modo gui: se abre GIMP con ventana y el puente.
+        3. Modo headless, o plan B del punto 1: GIMP oculto sin ventana en el mismo puerto.
+        """
+        if MODE != "headless":
+            gui_running = _gui_running()
+            self._launch(headless=False)
+            if self._wait_connect(FORWARD_TIMEOUT if gui_running else STARTUP_TIMEOUT):
+                return
+            if not gui_running:
+                raise GimpError("GIMP no abrió el puente MCP a tiempo. "
+                                "¿Está instalado el plugin mcp-bridge?")
+        self._launch(headless=True)
+        if not self._wait_connect(STARTUP_TIMEOUT):
+            raise GimpError("GIMP (sin ventana) no abrió el puente MCP a tiempo. "
+                            "¿Está instalado el plugin mcp-bridge?")
+
     def ensure(self) -> None:
         if self.sock:
             return
@@ -174,17 +220,7 @@ class Bridge:
         except OSError:
             if os.environ.get("GIMP_MCP_AUTOSTART", "1") == "0":
                 raise GimpError("El puente MCP de GIMP no está activo (127.0.0.1:%d)." % PORT)
-            self._launch()
-            deadline = time.time() + STARTUP_TIMEOUT
-            while True:
-                try:
-                    self._connect()
-                    break
-                except OSError:
-                    if time.time() > deadline:
-                        raise GimpError("GIMP no abrió el puente MCP a tiempo. "
-                                        "¿Está instalado el plugin mcp-bridge?")
-                    time.sleep(1.5)
+            self._start_gimp()
         resp = self._send({"cmd": "ping"})
         if not resp.get("ok"):
             self._close()

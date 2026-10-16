@@ -43,6 +43,24 @@ openclaw mcp set gimp '{"command":"C:/ruta/a/mcp-gimp/.venv/Scripts/gimp-mcp.exe
 openclaw mcp probe
 ```
 
+Para que el agente sepa **cuándo y cómo** usar todo esto (flujo de trabajo, recetas de calidad y
+entrega del archivo por Telegram/WhatsApp con `MEDIA:`), copia la skill incluida a tu workspace:
+
+```powershell
+Copy-Item -Recurse openclaw/skills/gimp-studio ~/.openclaw/workspace/skills/
+openclaw skills list   # debe aparecer "gimp-studio ✓ ready"
+```
+
+La skill combina el MCP de GIMP con la generación de imágenes nativa de OpenClaw
+(`image_generate`). Para activarla configura un proveedor de imagen, por ejemplo Gemini
+(requiere facturación activa en Google AI Studio):
+
+```powershell
+openclaw config patch --file imagegen.json5
+# imagegen.json5:
+# { agents: { defaults: { mediaModels: { image: { primary: "google/gemini-3.1-flash-image" } } } } }
+```
+
 ### Claude Code / Claude Desktop
 
 ```json
@@ -66,6 +84,7 @@ openclaw mcp probe
 | `GIMP_MCP_GIMP_DIR` | autodetectado | Carpeta `bin` de GIMP si no está en la ruta estándar |
 | `GIMP_MCP_TIMEOUT` | `300` | Segundos máximos por operación |
 | `GIMP_MCP_STARTUP_TIMEOUT` | `240` | Segundos de espera al arrancar GIMP |
+| `GIMP_MCP_FORWARD_TIMEOUT` | `20` | Si GIMP ya está abierto y no activa el puente en este tiempo (p. ej. tiene un diálogo abierto), se levanta un GIMP oculto sin ventana como plan B |
 
 ## Herramientas (42)
 
