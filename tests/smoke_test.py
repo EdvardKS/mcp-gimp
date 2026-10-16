@@ -52,6 +52,15 @@ step("draw pencil", s.gimp_draw, [60, 60, 200, 60], tool="pencil", size=4, color
 fonts = step("list fonts", s.gimp_list_resources, "fonts", "Sans", 5)
 txt = step("add_text", s.gimp_add_text, "PlayTorre 🏰", x=120, y=420, font=(fonts or ["Sans-serif"])[0], size=56, color="white", image_id=iid)
 step("edit_text", s.gimp_edit_text, txt and txt["id"], text="PlayTorre + GIMP", color="#ffee88")
+centered = step("add_text align", s.gimp_add_text, "Centrado", y=20, size=40, align="center_x", image_id=iid)
+if centered:
+    assert abs((centered["x"] + centered["width"] / 2) - 400) <= 2 and centered["y"] == 20, centered
+    s.gimp_delete_layer(centered["id"])
+big = step("add_text warning", s.gimp_add_text, "Texto demasiado largo para caber", x=600, size=60, image_id=iid)
+if big:
+    assert "warning" in big, big
+    s.gimp_delete_layer(big["id"])
+step("transform align", s.gimp_transform_layer, txt and txt["id"], align="center")
 step("filter dropshadow", s.gimp_apply_filter, "gegl:dropshadow", {"x": 6, "y": 6, "radius": 8, "color": "black", "opacity": 0.8}, layer_id=txt and txt["id"])
 step("filter blur", s.gimp_apply_filter, "gegl:gaussian-blur", {"std-dev-x": 2.5, "std-dev-y": 2.5}, layer_id=grad and grad["id"])
 step("filter nondestructive", s.gimp_apply_filter, "gegl:vignette", {"radius": 1.2}, layer_id=base, non_destructive=True)
@@ -94,6 +103,10 @@ if prev:
 step("preview layer", s.gimp_preview, iid, max_size=200, layer_id=txt and txt["id"])
 step("save xcf", s.gimp_save_image, iid, os.path.join(out, "test.xcf"))
 step("export png", s.gimp_export_image, os.path.join(out, "test.png"), iid)
+os.environ["GIMP_MCP_WORKDIR"] = out
+rel = step("export relative path", s.gimp_export_image, "sub/relativo.png", iid)
+if rel:
+    assert rel.lower() == os.path.join(out, "sub", "relativo.png").lower() and os.path.exists(rel), rel
 step("export jpg", s.gimp_export_image, os.path.join(out, "test.jpg"), iid, quality=85)
 step("export webp", s.gimp_export_image, os.path.join(out, "test.webp"), iid, quality=80)
 step("export_load layer", s.gimp_add_layer_from_file, os.path.join(out, "test.png"), image_id=iid, width=200, name="Miniatura")

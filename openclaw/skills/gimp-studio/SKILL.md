@@ -36,8 +36,8 @@ Si `image_generate` no aparece o falla por cuota, dilo en una frase y haz todo l
    - Imagen nueva → `image_generate` con un prompt detallado (sujeto, estilo, luz, encuadre, "sin texto" si vas a poner texto en GIMP). Luego `gimp_open_image` con la ruta devuelta.
    - Composición desde cero (cartel, tarjeta) → `gimp_new_image`.
 3. **Edita en GIMP** con capas: cada elemento (fondo, foto, texto, logo) en su capa. Así puedes corregir sin rehacer.
-4. **Comprueba con `gimp_preview`** después de cada cambio importante. Mira la imagen de verdad: ¿el texto se lee? ¿está centrado? ¿los colores encajan? Corrige antes de exportar.
-5. **Exporta** con `gimp_export_image` a `C:\Users\EdvardVM\.openclaw\workspace\media\outbound\<nombre-descriptivo>.<ext>`. Guarda también el `.xcf` con `gimp_save_image` si el usuario puede pedir cambios después.
+4. **Comprueba con `gimp_preview`** después de cada cambio importante. Mira la imagen de verdad y sé crítico: ¿el texto se lee entero o queda cortado por un borde? ¿está centrado? ¿los colores encajan? Si algo falla, corrígelo (mueve con `gimp_transform_layer(align="center")`, cambia tamaño) y vuelve a mirar antes de exportar. No digas "perfecto" sin haberlo comprobado.
+5. **Exporta** con `gimp_export_image` a `C:\Users\EdvardVM\Documents\playTorre_bot\media\outbound\<nombre-descriptivo>.<ext>`. Guarda también el `.xcf` con `gimp_save_image` si el usuario puede pedir cambios después.
 6. **Envía** el archivo (ver "Entrega").
 
 ## Herramientas GIMP por tarea
@@ -48,7 +48,7 @@ Si `image_generate` no aparece o falla por cuota, dilo en una frase y haz todo l
 - **Capas**: `gimp_new_layer` (color/transparente/grupo), `gimp_add_layer_from_file` (meter logo o foto, centra y escala), `gimp_set_layer` (opacidad, modo de fusión: multiply, screen, overlay, soft-light…, posición), `gimp_layer_order`, `gimp_duplicate_layer`, `gimp_delete_layer`, `gimp_merge_layers`, `gimp_transform_layer` (escalar, rotar, voltear, mover), `gimp_layer_mask`.
 - **Selección**: `gimp_select` (rectangle, ellipse, rounded_rectangle, polygon, all, none, invert, from_alpha; `feather` para bordes suaves), `gimp_select_by_color` (color exacto o varita mágica con `x,y` + `contiguous`), `gimp_modify_selection` (grow, shrink, feather, border).
 - **Pintura**: `gimp_set_colors`, `gimp_fill`, `gimp_stroke_selection` (bordes y marcos), `gimp_draw` (paintbrush, pencil, airbrush, eraser, smudge, clone, dodge, burn), `gimp_gradient` (linear, radial…).
-- **Texto**: `gimp_add_text` (fuente, tamaño px, color, justificación, `box_width` para saltos de línea), `gimp_edit_text`, `gimp_list_resources("fonts", "Bold")` para elegir fuente.
+- **Texto**: `gimp_add_text` (fuente, tamaño px, color, justificación, `box_width` para saltos de línea), `gimp_edit_text`, `gimp_list_resources("fonts", "Bold")` para elegir fuente. **Ojo**: `x,y` es la esquina superior izquierda de la capa, no su centro. Para centrar usa `align="center"` (o `align="center_x"` con la `y` que quieras). La respuesta trae `x, y, width, height`: si `x+width` supera el ancho de la imagen, el texto sale cortado; reduce `size` o centra.
 - **Color**: `gimp_adjust` con brightness_contrast, hue_saturation, levels, auto_levels, curves, exposure, color_temperature, shadows_highlights, color_balance, desaturate, invert, threshold, posterize, colorize.
 - **Filtros**: `gimp_apply_filter` con cualquier operación GEGL. Consulta propiedades con `gimp_filter_info("gegl:nombre")` o busca con `gimp_filter_info(query="blur")`.
 - **Sin límite**: `gimp_pdb_search` / `gimp_pdb_info` / `gimp_pdb_call` para cualquier función de GIMP, y `gimp_run_python` para código Python dentro de GIMP (API `Gimp`, `Gegl`). Si una herramienta no hace exactamente lo que necesitas, estas sí.
@@ -72,7 +72,7 @@ Al terminar, en tu respuesta final pon un breve comentario y después **una lín
 ```
 Listo: cartel 1080×1080 con el texto que pediste.
 
-MEDIA:C:\Users\EdvardVM\.openclaw\workspace\media\outbound\cartel-evento.png
+MEDIA:C:\Users\EdvardVM\Documents\playTorre_bot\media\outbound\cartel-evento.png
 ```
 
 Reglas:

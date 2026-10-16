@@ -59,6 +59,19 @@ def _offsets(it):
     r = it.get_offsets()
     return int(r[-2]), int(r[-1])
 
+def _align(l, mode, y=None):
+    """Centra una capa en la imagen: 'center' (ambos ejes), 'center_x' o 'center_y'.
+    Si se da y con center_x, se mantiene esa y (útil para texto centrado a una altura)."""
+    im = l.get_image()
+    x0, y0 = _offsets(l)
+    if mode in ("center", "center_x"):
+        x0 = (im.get_width() - l.get_width()) // 2
+    if mode in ("center", "center_y"):
+        y0 = (im.get_height() - l.get_height()) // 2
+    elif y is not None:
+        y0 = int(y)
+    l.set_offsets(int(x0), int(y0))
+
 def _layer_info(l):
     x, y = _offsets(l)
     d = {"id": l.get_id(), "name": l.get_name(), "kind": type(l).__name__,

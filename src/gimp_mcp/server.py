@@ -42,6 +42,16 @@ def _run(code: str, **params: Any) -> Any:
     return out
 
 
+def _abs(path: str | None) -> str | None:
+    """Rutas relativas resueltas contra GIMP_MCP_WORKDIR (o el cwd del servidor), no contra el cwd de GIMP."""
+    if not path:
+        return path
+    path = os.path.expanduser(path)
+    if not os.path.isabs(path):
+        path = os.path.join(os.environ.get("GIMP_MCP_WORKDIR") or os.getcwd(), path)
+    return os.path.normpath(path)
+
+
 def _tmp_png() -> str:
     d = os.path.join(tempfile.gettempdir(), "gimp-mcp")
     os.makedirs(d, exist_ok=True)
@@ -109,7 +119,7 @@ def gimp_open_image(path: str) -> dict:
 im = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, _file(P['path']))
 _show(im)
 result = _image_info(im)
-""", path=path)
+""", path=_abs(path))
 
 
 @mcp.tool(annotations=DANGER)
@@ -129,7 +139,7 @@ Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, im, _file(path), None)
 im.set_file(_file(path))
 im.clean_all()
 result = os.path.abspath(path)
-""", image_id=image_id, path=path)
+""", image_id=image_id, path=_abs(path))
 
 
 @mcp.tool(annotations=DANGER)
@@ -162,7 +172,7 @@ try:
 finally:
     work.delete()
 result = path
-""", image_id=image_id, path=path, quality=quality, flatten=flatten)
+""", image_id=image_id, path=_abs(path), quality=quality, flatten=flatten)
 
 
 @mcp.tool(annotations=DANGER)
@@ -399,7 +409,7 @@ with _undo(im):
     l.set_offsets(x, y)
     im.set_selected_layers([l])
 result = _layer_info(l)
-""", image_id=image_id, path=path, x=x, y=y, name=name, width=width, height=height, position=position)
+""", image_id=image_id, path=_abs(path), x=x, y=y, name=name, width=width, height=height, position=position)
 
 
 @mcp.tool(annotations=EDIT)
@@ -495,9 +505,11 @@ def gimp_transform_layer(layer_id: int | None = None, image_id: int | None = Non
                          scale_percent: float | None = None, rotate_degrees: float | None = None,
                          flip: Literal["none", "horizontal", "vertical"] = "none",
                          move_x: int | None = None, move_y: int | None = None,
-                         layer_to_image_size: bool = False) -> dict:
+                         layer_to_image_size: bool = False,
+                         align: Literal["none", "center", "center_x", "center_y"] = "none") -> dict:
     """Transforma una capa: escalar (px o %), rotar (grados, sentido horario, sobre su centro),
-    voltear, mover a x/y absolutos, o ajustar el tamaño del borde de la capa al de la imagen."""
+    voltear, mover a x/y absolutos (esquina superior izquierda), centrar en la imagen (align),
+    o ajustar el tamaño del borde de la capa al de la imagen."""
     return _run("""
 im = _item(P['layer_id']).get_image() if P['layer_id'] is not None else _img(P['image_id'])
 l = _drawable(im, P['layer_id'])
@@ -519,12 +531,14 @@ with _undo(im):
         x0, y0 = _offsets(l)
         l.set_offsets(P['move_x'] if P['move_x'] is not None else x0,
                       P['move_y'] if P['move_y'] is not None else y0)
+    if P['align'] != 'none':
+        _align(l, P['align'])
     if P['layer_to_image_size']:
         l.resize_to_image_size()
 result = _layer_info(l)
 """, layer_id=layer_id, image_id=image_id, scale_width=scale_width, scale_height=scale_height,
                 scale_percent=scale_percent, rotate_degrees=rotate_degrees, flip=flip,
-                move_x=move_x, move_y=move_y, layer_to_image_size=layer_to_image_size)
+                move_x=move_x, move_y=move_y, layer_to_image_size=layer_to_image_size, align=align)
 
 
 @mcp.tool(annotations=EDIT)
@@ -771,9 +785,13 @@ result = 'degradado aplicado'
 def gimp_add_text(text: str, x: float = 0, y: float = 0, font: str = "Sans-serif", size: float = 48,
                   color: str = "black", justify: Literal["left", "right", "center", "fill"] = "left",
                   box_width: float | None = None, letter_spacing: float | None = None,
-                  line_spacing: float | None = None, image_id: int | None = None) -> dict:
-    """Añade una capa de texto editable en (x,y). size en px. box_width fija el ancho de caja
-    para que el texto haga saltos de línea. Usa gimp_list_resources('fonts') para ver fuentes."""
+                  line_spacing: float | None = None, image_id: int | None = None,
+                  align: Literal["none", "center", "center_x", "center_y"] = "none") -> dict:
+    """Añade una capa de texto editable. (x,y) es la ESQUINA SUPERIOR IZQUIERDA de la capa de texto,
+    no su centro: para centrar usa align='center' (ambos ejes) o 'center_x' (centrado horizontal
+    a la altura y). size en px. box_width fija el ancho de caja para que el texto haga saltos de
+    línea. Usa gimp_list_resources('fonts') para ver fuentes. Comprueba en la respuesta que
+    x+width y y+height no superan el tamaño de la imagen (si no, el texto sale cortado)."""
     return _run("""
 im = _img(P['image_id'])
 f = Gimp.Font.get_by_name(P['font'])
@@ -789,11 +807,16 @@ with _undo(im):
     if P['line_spacing'] is not None: l.set_line_spacing(P['line_spacing'])
     if P['box_width']:
         l.resize(P['box_width'], l.get_height())
+    if P['align'] != 'none':
+        _align(l, P['align'], P['y'])
     im.set_selected_layers([l])
 result = _layer_info(l)
+info = result
+if info['x'] + info['width'] > im.get_width() or info['y'] + info['height'] > im.get_height() or info['x'] < 0 or info['y'] < 0:
+    result['warning'] = 'El texto se sale de la imagen: reduce size, usa align="center" o cambia x/y'
 """, text=text, x=x, y=y, font=font, size=size, color=color, justify=justify,
                 box_width=box_width, letter_spacing=letter_spacing, line_spacing=line_spacing,
-                image_id=image_id)
+                image_id=image_id, align=align)
 
 
 @mcp.tool(annotations=EDIT)
